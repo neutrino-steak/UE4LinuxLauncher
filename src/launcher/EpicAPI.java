@@ -24,6 +24,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.zip.DataFormatException;
 import java.util.zip.Inflater;
+import java.lang.Thread;
 
 public class EpicAPI {
 	public static void main(String args[]) {
@@ -342,7 +343,7 @@ public class EpicAPI {
 		InputsManager.getInstance().addInput("twoFactorCode", code);
 
 		try {
-			URL oracle = new URL("https://accounts.epicgames.com/login/doTwoFactor");
+			URL oracle = new URL("https://accounts.launcher-website-prod07.ol.epicgames.com/login/doTwoFactor");
 			HttpURLConnection conn = (HttpURLConnection) oracle.openConnection();
 			conn.setDoInput(true);
 			conn.setInstanceFollowRedirects(false);
@@ -383,7 +384,7 @@ public class EpicAPI {
 
 	private void authorize() {
 		try {
-			URL oracle = new URL("https://accounts.unrealengine.com/authorize/index?client_id=" + Main.getInstance().getUser().getClientId() + "&response_type=code&forWidget=true");
+			URL oracle = new URL("https://www.epicgames.com/id/api/exchange");
 			HttpURLConnection conn = (HttpURLConnection) oracle.openConnection();
 			conn.setRequestProperty("Cookie", CookiesManager.getInstance().getAllCookies());
 			conn.setRequestProperty("Origin", "allar_ue4_marketplace_commandline");
@@ -393,8 +394,8 @@ public class EpicAPI {
 			if (conn.getResponseCode() == 200) {
 				CookiesManager.getInstance().addCookies(conn);
 
-				String content = Utils.getContent(conn, true);
-				String code = content.split("code=")[1].split("\"")[0];
+				JSONObject content = new JSONObject(Utils.getContent(conn, true));
+				String code = content.getString("code");
 				Main.getInstance().getLoginForm().increaseProgressBarValue(10);
 				exchange(code);
 			}
@@ -420,6 +421,7 @@ public class EpicAPI {
 
 			if (conn.getResponseCode() == 302) {
 				CookiesManager.getInstance().addCookies(conn);
+				Main.getInstance().getUser().setExchangeCode(code);
 				Main.getInstance().getLoginForm().increaseProgressBarValue(15);
 				OAuth();
 			}
@@ -434,13 +436,14 @@ public class EpicAPI {
 		InputsManager.getInstance().clearInputs();
 		if (Main.getInstance().getUser().isTwoFactorAuth()) {
 			InputsManager.getInstance().addInput("grant_type", "exchange_code");
-			InputsManager.getInstance().addInput("exchange_code", twoFactorOAuth());
+			twoFactorOAuth();
+			InputsManager.getInstance().addInput("exchange_code", Main.getInstance().getUser().getExchangeCode());
+			InputsManager.getInstance().addInput("token_type", "eg1");
 			InputsManager.getInstance().addInput("includePerms", "true");
 		}
 		else {
-			InputsManager.getInstance().addInput("grant_type", "password");
-			InputsManager.getInstance().addInput("username", Main.getInstance().getUser().getUsername());
-			InputsManager.getInstance().addInput("password", Main.getInstance().getUser().getPassword());
+			InputsManager.getInstance().addInput("grant_type", "exchange_code");
+			InputsManager.getInstance().addInput("exchange_code", Main.getInstance().getUser().getExchangeCode());
 			InputsManager.getInstance().addInput("token_type", "eg1");
 			InputsManager.getInstance().addInput("includePerms", "false");
 		}
@@ -450,8 +453,9 @@ public class EpicAPI {
 			HttpURLConnection conn = (HttpURLConnection) oracle.openConnection();
 			conn.setDoInput(true);
 			conn.setInstanceFollowRedirects(false);
-			conn.setRequestProperty("Authorization", "basic MzQ0NmNkNzI2OTRjNGE0NDg1ZDgxYjc3YWRiYjIxNDE6OTIwOWQ0YTVlMjVhNDU3ZmI5YjA3NDg5ZDMxM2I0MWE=");
+			conn.setRequestProperty("Authorization", "basic MzRhMDJjZjhmNDQxNGUyOWIxNTkyMTg3NmRhMzZmOWE6ZGFhZmJjY2M3Mzc3NDUwMzlkZmZlNTNkOTRmYzc2Y2Y=");
 			conn.setRequestProperty("Origin", "allar_ue4_marketplace_commandline");
+			conn.setRequestProperty("Cookie", CookiesManager.getInstance().getAllCookies());
 
 			InputsManager.getInstance().writeData(conn);
 
@@ -461,6 +465,31 @@ public class EpicAPI {
 				Main.getInstance().getUser().setAccessToken(epicOAuth.getString("access_token"));
 				Main.getInstance().getLoginForm().increaseProgressBarValue(15);
 				OAuthExchange();
+				OAuthVerify();
+			}
+			else
+				Main.getInstance().getLoginForm().loginError("Error: #1008");
+		} catch (Exception e) {
+			System.out.println(e);
+		}
+	}
+
+	private void OAuthVerify() {
+		InputsManager.getInstance().clearInputs();
+		try {
+			URL oracle = new URL("https://account-public-service-prod03.ol.epicgames.com/account/api/oauth/verify?includePerms=true");
+			HttpURLConnection conn = (HttpURLConnection) oracle.openConnection();
+			conn.setRequestProperty("Authorization", "bearer " + Main.getInstance().getUser().getAccessToken());
+			conn.setRequestMethod("GET");
+			conn.setRequestProperty("Content-Type", "application/json");
+			conn.setRequestProperty("User-Agent", "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:58.0) Gecko/20100101 Firefox/58.0");
+			conn.setRequestProperty("Host", "account-public-service-prod03.ol.epicgames.com");
+			conn.setInstanceFollowRedirects(false);
+			conn.setDoInput(true);
+			conn.connect();
+
+			if (conn.getResponseCode() == 200) {
+				return;
 			}
 			else
 				Main.getInstance().getLoginForm().loginError("Error: #1008");
@@ -478,13 +507,13 @@ public class EpicAPI {
 			conn.setRequestProperty("Cookie", CookiesManager.getInstance().getAllCookies());
 			conn.setRequestProperty("Origin", "allar_ue4_marketplace_commandline");
 			conn.addRequestProperty("Accept-Language", "en-US,en;q=0.8");
+			conn.setRequestProperty("User-Agent", "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:58.0) Gecko/20100101 Firefox/58.0");
 			conn.addRequestProperty("Host", "accounts.unrealengine.com");
 			conn.connect();
 
 			if (conn.getResponseCode() == 200)
 			{
-				String content = Utils.getContent(conn, true);
-				opt = content.split("com.epicgames.account.web.widgets.loginWithExchangeCode\\('")[1].split("'")[0];
+				CookiesManager.getInstance().addCookies(conn);
 			}
 		} catch (Exception e) {
 			System.out.println(e);
@@ -570,7 +599,7 @@ public class EpicAPI {
 
 	private void getStore(String accessToken) {
 		try {
-			URL oracle = new URL(getMarketplaceLocation(accessToken));
+			URL oracle = new URL("https://www.unrealengine.com" + getMarketplaceLocation(accessToken));
 			HttpURLConnection conn = (HttpURLConnection) oracle.openConnection();
 			conn.setRequestProperty("Cookie", CookiesManager.getInstance().getAllCookies());
 			conn.setRequestProperty("Origin", "allar_ue4_marketplace_commandline");
@@ -635,7 +664,7 @@ public class EpicAPI {
 			if (!startupCheck)
 				Main.getInstance().getMainForm().setLoadingText("Loading categories data...");
 
-			URL oracle = new URL("https://www.unrealengine.com/marketplace/assets/ajax-get-categories");
+			URL oracle = new URL("https://www.unrealengine.com/marketplace/en-US/content-cat/assets");
 			HttpURLConnection conn = (HttpURLConnection) oracle.openConnection();
 			conn.setRequestProperty("Host", "www.unrealengine.com");
 			conn.setRequestProperty("User-Agent", "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:58.0) Gecko/20100101 Firefox/58.0");
@@ -646,9 +675,6 @@ public class EpicAPI {
 			conn.setRequestProperty("X-Requested-With", "XMLHttpRequest");
 			conn.setRequestProperty("Cookie", CookiesManager.getInstance().getAllCookies());
 			conn.setDoInput(true);
-			conn.setDoOutput(true);
-
-			Utils.writeData(conn, "category=assets/recent&start=0");
 
 			conn.connect();
 
@@ -656,12 +682,12 @@ public class EpicAPI {
 				return conn.getResponseCode() == 200;
 
 			if (conn.getResponseCode() == 200) {
-				JSONObject json = new JSONObject(Utils.getContent(conn, true));
-
-				JSONArray array = json.getJSONArray("categories");
-				for (int i = 1; i < array.length(); i++) {
-					JSONObject element = array.getJSONObject(i);
-					Main.getInstance().getUser().createCategory(element.getString("path"), element.getString("name"));
+				String html = Utils.getContent(conn, true);
+				html = html.substring(html.indexOf("Browse by Category")+26, html.indexOf("</li></ul></li><li class"));
+				String s = html.replaceAll("</li>|<li*[> ]|<a*[> ]|</a>|href=|<|>", "");
+				String[] s1 = s.split("\\\"");
+				for(int i = 1; i < s1.length; i=i+2) {
+					Main.getInstance().getUser().createCategory(s1[i].substring(s1[i].indexOf("assets/")), s1[i+1]);
 				}
 				Main.getInstance().getUser().updateCategoriesList();
 				Main.getInstance().getMainForm().increaseLoadingBar(10);
@@ -676,7 +702,7 @@ public class EpicAPI {
 		Main.getInstance().getUser().clearOwnedAssets();
 		try {
 			Main.getInstance().getMainForm().setLoadingText("Loading owned assets...");
-			URL oracle = new URL("https://launcher-public-service-prod06.ol.epicgames.com/launcher/api/public/assets/Windows?Label=live");
+			URL oracle = new URL("https://launcher-public-service-prod06.ol.epicgames.com/launcher/api/public/assets/Windows?label=Live");
 			HttpURLConnection conn = (HttpURLConnection) oracle.openConnection();
 			conn.setRequestProperty("Host", "www.unrealengine.com");
 			conn.setRequestProperty("User-Agent", "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:58.0) Gecko/20100101 Firefox/58.0");
@@ -921,7 +947,7 @@ public class EpicAPI {
 		try {
 			Main.getInstance().getDownloadForm().setMainInfoText("Downloading item info...");
 			String data = item.getCatalogItemId() + "/" + item.getAppNameByRev(Main.getInstance().getUser().getEngineVersion());
-			URL oracle = new URL("https://launcher-public-service-prod06.ol.epicgames.com/launcher/api/public/assets/Windows/" + data);
+			URL oracle = new URL("https://launcher-public-service-prod06.ol.epicgames.com/launcher/api/public/assets/Windows/" + data + "?label=Live");
 			HttpURLConnection conn = (HttpURLConnection) oracle.openConnection();
 			conn.setRequestProperty("Host", "www.unrealengine.com");
 			conn.setRequestProperty("User-Agent", "game=UELauncher, engine=UE4, build=allar_ue4_marketplace_commandline");
@@ -937,27 +963,37 @@ public class EpicAPI {
 				JSONObject itemBuildInfoJSON = new JSONObject(Utils.getContent(conn, true));
 				String distribution = itemBuildInfoJSON.getJSONObject("items").getJSONObject("MANIFEST").getString("distribution");
 				String path = itemBuildInfoJSON.getJSONObject("items").getJSONObject("MANIFEST").getString("path");
+				String signature = "?" + itemBuildInfoJSON.getJSONObject("items").getJSONObject("MANIFEST").getString("signature");
+				String downloadPath = itemBuildInfoJSON.getJSONObject("items").getJSONObject("CHUNKS").getString("path");
+				downloadPath = downloadPath.substring(0, downloadPath.indexOf("/CloudDir"));
 				Main.getInstance().getDownloadForm().increase2Progress(5);
-				getItemManifest(distribution, path);
+				getItemManifest(distribution, path, signature, true, downloadPath);
 			}
 		} catch (Exception e) {
 			System.out.println(e);
 		}
 	}
 
-	public void getItemManifest(String distribution, String path) {
+	public void getItemManifest(String distribution, String path, String signature, boolean needsAuth, String downloadPath) {
 		try {
 			Main.getInstance().getDownloadForm().setMainInfoText("Downloading item manifest...");
-			URL oracle = new URL(distribution + path);
+			URL oracle = new URL(distribution + path + signature);
 			HttpURLConnection conn = (HttpURLConnection) oracle.openConnection();
 			conn.setRequestProperty("Host", "www.unrealengine.com");
 			conn.setRequestProperty("User-Agent", "game=UELauncher, engine=UE4, build=allar_ue4_marketplace_commandline");
 			conn.setRequestProperty("Accept", "*/*");
-			conn.setRequestProperty("Authorization", "bearer " + Main.getInstance().getUser().getAccessToken());
+			if(needsAuth)
+				conn.setRequestProperty("Authorization", "bearer " + Main.getInstance().getUser().getAccessToken());
 			conn.setRequestProperty("Cookie", CookiesManager.getInstance().getAllCookies());
 			conn.setDoInput(true);
 			conn.setInstanceFollowRedirects(false);
 			conn.connect();
+			if(conn.getResponseCode()==501)
+			{
+				conn.disconnect();
+				getItemManifest(distribution, path, signature, false, downloadPath);
+				return;
+			}
 			if (conn.getResponseCode() == 200) {
 				if (isStopDownload())
 					return;
@@ -966,7 +1002,7 @@ public class EpicAPI {
 				Main.getInstance().getDownloadForm().increase2Progress(5);
 				if (isStopDownload())
 					return;
-				downloadItemChunks(appName, manifestJSON.getJSONObject("ChunkHashList"), manifestJSON.getJSONObject("DataGroupList"));
+				downloadItemChunks(appName, manifestJSON.getJSONObject("ChunkHashList"), manifestJSON.getJSONObject("DataGroupList"), downloadPath);
 				if (isStopDownload())
 					return;
 				extractFiles(appName, manifestJSON.getJSONArray("FileManifestList"));
@@ -1010,12 +1046,12 @@ public class EpicAPI {
 	private int _chunksCount;
 
 
-	public void downloadItemChunks(String appName, JSONObject chunkHashList, JSONObject dataGroupList) {
+	public void downloadItemChunks(String appName, JSONObject chunkHashList, JSONObject dataGroupList, String downloadPath) {
 		try {
 			_chunksDownloaded = 0;
 			ArrayList<String[]> data = new ArrayList<>();
 			JSONArray chunkHashNames = chunkHashList.names();
-			String chunkBaseURL = "http://download.epicgames.com/Builds/Rocket/Automated/" + appName + "/CloudDir/ChunksV3/";
+			String chunkBaseURL = "https://download.epicgames.com/" + downloadPath +  "/CloudDir/ChunksV3/";
 			_chunksCount = chunkHashNames.length();
 			Main.getInstance().getDownloadForm().setMainInfoText("Downloaded chunks [" + _chunksDownloaded + " / " + _chunksCount + "]...");
 
